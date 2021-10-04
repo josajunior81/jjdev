@@ -2,8 +2,9 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const express = require("express");
 const axios = require("axios");
-const { text } = require("express");
 const cors = require("cors")({ origin: true });
+const fs = require("fs");
+const path = require("path");
 
 admin.initializeApp();
 
@@ -32,7 +33,7 @@ app.get("/", async (req, res) => {
   const doc = await docRef.get();
 
   if (!doc.exists) {
-    console.error("No such document!");
+    res.send("Nada pra hoje");
   } else {
     console.info("Document data:", doc.data());
   }
@@ -48,7 +49,7 @@ app.get("/", async (req, res) => {
 
   for (const t of doc.data().text) {
     const verse = await getText(t);
-    texts += `<strong>${t.replace("+", " ")}</strong><br>${verse}<br><br>`;
+    texts += `*${t.replace("+", " ")}*<br>${verse}<br><br>`;
   }
 
   res.send(`
@@ -57,12 +58,59 @@ app.get("/", async (req, res) => {
         <title>JJDev</title>
       </head>
       <body>
-        <h1><p>${theme.id} - ${theme.data().title}</p></h1>
-        ${questions}
-        <hr>
+      *${theme.id} - ${theme.data().title}*
+        <br>
+        \`\`\`${questions}\`\`\`
+        <br>
         ${texts}
       </body>
     </html>`);
+});
+
+app.get("/api/calendar/:key", async (req, res) => {
+  const filePathThemes = path.join(
+    __dirname,
+    `calendar/${req.params.key}.themes`
+  );
+
+  const themesData = fs.readFileSync(filePathThemes, "utf8");
+  for (const line of themesData.split(/\r?\n/)) {
+    const t = line.split("|");
+    const id = t[0];
+    const title = t[1];
+    const questions = t.slice(2, t.length);
+    const theme = {
+      questions: questions,
+      title: title,
+    };
+    await admin.firestore().collection("theme").doc(id).set(theme);
+  }
+
+  const filePath = path.join(__dirname, `calendar/${req.params.key}.texts`);
+  try {
+    const data = fs.readFileSync(filePath, "utf8");
+
+    for (const line of data.split(/\r?\n/)) {
+      const d = line.split("|");
+      const date = d[0];
+      const text = d[1].split(" ");
+      const themeRef = d[2];
+
+      let newItem = {
+        text: text,
+        themeRef: admin.firestore().doc(`theme/${themeRef}`),
+      };
+
+      await admin
+        .firestore()
+        .collection("daily_reading")
+        .doc(date)
+        .set(newItem);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  res.send("Success");
 });
 
 async function getText(reference) {
@@ -77,7 +125,7 @@ async function getText(reference) {
   let finalText = "";
   chp.verses.forEach((v) => {
     if (v.number >= firstVerse && v.number <= lastVerse) {
-      finalText += `${v.number} ${v.text} `;
+      finalText += `*${v.number}* ${v.text} `;
     }
   });
   return finalText;
