@@ -5,6 +5,7 @@ const axios = require("axios");
 const cors = require("cors")({ origin: true });
 const fs = require("fs");
 const path = require("path");
+const nodemailer = require("nodemailer");
 
 admin.initializeApp();
 
@@ -14,10 +15,28 @@ const axiosInstance = axios.create({
   headers: { Authorization: `Bearer ${functions.config().bible_api.key}` },
 });
 
+const transporter = nodemailer.createTransport({
+  host: "smtp-relay.sendinblue.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: functions.config().mail.user,
+    pass: functions.config().mail.password,
+  },
+});
+
 const app = express();
 app.use(cors);
 
-app.get("/", async (req, res) => {
+exports.sendDailyReadingFunction = functions.pubsub
+  .schedule("0 6 * * *")
+  .timeZone("America/Sao_Paulo")
+  .onRun((context) => {
+    sendDailyReadingMail();
+    return null;
+  });
+
+async function getDailyReadingText() {
   const date = new Date();
   const year = new Intl.DateTimeFormat("en", { year: "numeric" }).format(date);
   const month = new Intl.DateTimeFormat("en", { month: "2-digit" }).format(
@@ -33,9 +52,7 @@ app.get("/", async (req, res) => {
   const doc = await docRef.get();
 
   if (!doc.exists) {
-    res.send("Nada pra hoje");
-  } else {
-    console.info("Document data:", doc.data());
+    return "Nada pra hoje";
   }
 
   const theme = await doc.data().themeRef.get();
@@ -52,17 +69,35 @@ app.get("/", async (req, res) => {
     texts += `*${t.replace("+", " ")}*<br>${verse}<br><br>`;
   }
 
+  return `*${theme.id} - ${theme.data().title}*
+  <br>
+  \`\`\`${questions}\`\`\`
+  <br>
+  ${texts}`;
+}
+
+async function sendDailyReadingMail() {
+  const bodyText = await getDailyReadingText();
+
+  let info = await transporter.sendMail({
+    from: '"Josafá Souza Jr." <josafajr@hotmail.com>',
+    to: "josafassj@gmail.com, josafa_jr@yahoo.com.br",
+    subject: "Leitura diária do bloco",
+    text: bodyText,
+  });
+  console.log("Message sent: %s", info.messageId);
+}
+
+app.get("/", async (req, res) => {
+  const bodyText = await getDailyReadingText();
+
   res.send(`
       <!doctype html>
       <head>
         <title>JJDev</title>
       </head>
       <body>
-      *${theme.id} - ${theme.data().title}*
-        <br>
-        \`\`\`${questions}\`\`\`
-        <br>
-        ${texts}
+        ${bodyText}
       </body>
     </html>`);
 });
@@ -114,18 +149,31 @@ app.get("/api/calendar/:key", async (req, res) => {
 });
 
 async function getText(reference) {
-  const keyArr = reference.split(/[+:-]/);
+  const keyArr = reference.split(/[+:]/);
   const book = keyArr[0].toLowerCase();
   const chapter = keyArr[1];
-  const firstVerse = keyArr[2];
-  const lastVerse = keyArr.length > 3 ? keyArr[3] : firstVerse;
+  const verses = keyArr[2].split(";");
+  const contiguousVerses = verses.filter((f) => f.includes("-"));
+  const singleVerses = verses.filter((f) => !f.includes("-"));
+
+  let chosenVerses = [];
+  if (contiguousVerses.length > 0) {
+    let cv = contiguousVerses[0].split("-");
+    for (let i = cv[0]; i <= cv[1]; i++) {
+      chosenVerses.push(i);
+    }
+  }
+
+  chosenVerses.push(...singleVerses);
+
+  chosenVerses.sort((a, b) => a - b);
 
   const response = await axiosInstance.get(`/verses/ra/${book}/${chapter}`);
   const chp = response.data;
   let finalText = "";
   chp.verses.forEach((v) => {
-    if (v.number >= firstVerse && v.number <= lastVerse) {
-      finalText += `*${v.number}* ${v.text} `;
+    if (chosenVerses.some((e) => e == v.number)) {
+      finalText += `<strong>${v.number}</strong> ${v.text} `;
     }
   });
   return finalText;
@@ -137,35 +185,16 @@ app.get("/api/bible/book/:id", (req, res) => {
   });
 });
 
-app.get("/api/bible/:version/:key", (req, res) => {
-  const keyArr = req.params.key.split(/[+:-]/);
-  const book = keyArr[0];
-  const chapter = keyArr[1];
-  const firstVerse = keyArr[2];
-  const lastVerse = keyArr.length > 3 ? keyArr[3] : firstVerse;
-
-  axiosInstance
-    .get(`/verses/${req.params.version}/${book}/${chapter}`)
-    .then((response) => {
-      const chp = response.data;
-      let finalText = "";
-      chp.verses.forEach((v) => {
-        if (v.number >= firstVerse && v.number <= lastVerse) {
-          finalText += `<strong>${v.number}</strong> ${v.text} `;
-        }
-      });
-      res.send(`<!doctype html>
-      <head>
-        <title>JJDev</title>
-      </head>
-      <body>
-      ${finalText}
-      </body>
-    </html>`);
-    })
-    .catch((error) => {
-      res.send(error);
-    });
+app.get("/api/bible/:version/:key", async (req, res) => {
+  let finalText = await getText(req.params.key);
+  res.send(`<!doctype html>
+    <head>
+      <title>JJDev</title>
+    </head>
+    <body>
+    ${finalText}
+    </body>
+  </html>`);
 });
 
 exports.app = functions.https.onRequest(app);
