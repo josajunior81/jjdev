@@ -4,8 +4,11 @@ const path = require("path");
 
 admin.initializeApp();
 
-async function getDailyReadingText(axiosInstance) {
-  const date = new Date();
+async function getDailyReadingText(
+  axiosInstance,
+  version = "acf",
+  date = new Date()
+) {
   const year = new Intl.DateTimeFormat("en", { year: "numeric" }).format(date);
   const month = new Intl.DateTimeFormat("en", { month: "2-digit" }).format(
     date
@@ -33,7 +36,7 @@ async function getDailyReadingText(axiosInstance) {
   let texts = "";
 
   for (const t of doc.data().text) {
-    const verse = await getText("acf", t, axiosInstance);
+    const verse = await getText(version, t, axiosInstance);
     texts += `*${t.replace("+", " ")}*<br>${verse}<br><br>`;
   }
 
@@ -48,7 +51,16 @@ async function getText(version, reference, axiosInstance) {
   const keyArr = reference.split(/[+:]/);
   const book = keyArr[0].toLowerCase();
   const chapter = keyArr[1];
-  const verses = keyArr[2].split(";");
+
+  const response = await axiosInstance.get(
+    `/verses/${version}/${book}/${chapter}`
+  );
+
+  const verses =
+    keyArr.length >= 3
+      ? keyArr[2].split(";")
+      : [`1-${response.data.chapter.verses}`];
+
   const contiguousVerses = verses.filter((f) => f.includes("-"));
   const singleVerses = verses.filter((f) => !f.includes("-"));
 
@@ -66,9 +78,6 @@ async function getText(version, reference, axiosInstance) {
 
   chosenVerses.sort((a, b) => a - b);
 
-  const response = await axiosInstance.get(
-    `/verses/${version}/${book}/${chapter}`
-  );
   const chp = response.data;
   let finalText = "";
   chp.verses.forEach((v) => {
