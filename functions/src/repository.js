@@ -56,7 +56,8 @@ async function getText(version, reference, axiosInstance) {
   if (contiguousVerses.length > 0) {
     contiguousVerses.forEach((e) => {
       let cv = e.split("-");
-      for (let i = cv[0]; i <= cv[1]; i++) {
+      console.log(cv[0] + " " + cv[1]);
+      for (let i = Number(cv[0]); i <= Number(cv[1]); i++) {
         chosenVerses.push(i);
       }
     });
