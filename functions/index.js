@@ -2,6 +2,7 @@ const functions = require("firebase-functions");
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors")({ origin: true });
+const helmet = require("helmet");
 const {
   getDailyReadingText,
   getText,
@@ -16,8 +17,19 @@ const axiosInstance = () => {
   });
 };
 
+const axiosInstanceDBP = axios.create({
+  baseURL: functions.config().bible.url,
+  timeout: 30000,
+  params: {
+    v: 4,
+    key: functions.config().bible.api_key,
+  },
+});
+
 const app = express();
 app.use(cors);
+app.use(helmet());
+app.disable("x-powered-by");
 
 const htmlText = (bodyText) => `<!doctype html>
       <head>
@@ -28,6 +40,19 @@ const htmlText = (bodyText) => `<!doctype html>
         <p>_Almeida Corrigida e Fiel_</p>
       </body>
     </html>`;
+
+app.get("/dbp/bible", async (req, res) => {
+  const response = await axiosInstanceDBP.get(`/bibles/PORACF`);
+  res.send(response.data);
+});
+
+app.get("/dbp/:book/:chapter", async (req, res) => {
+  const version = req.query.version ? req.query.version : "PORACF";
+  const response = await axiosInstanceDBP.get(
+    `/bibles/filesets/${version}/${req.params.book}/${req.params.chapter}`
+  );
+  res.send(response.data);
+});
 
 app.get("/", async (req, res) => {
   let version = req.query.version ? req.query.version : "acf";
