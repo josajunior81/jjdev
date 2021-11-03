@@ -1,0 +1,7 @@
+{
+  "name": "Leitorbot",
+  "description": "Leitorbot",
+  "scripts": {
+    "start": "firebase emulators:start --import=./data-path --export-on-exit=./data-path"
+  }
+}

@@ -3,6 +3,7 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors")({ origin: true });
 const helmet = require("helmet");
+const multer = require("multer-firebase");
 const {
   getDailyReadingText,
   getText,
@@ -29,6 +30,8 @@ const axiosInstanceDBP = axios.create({
 const app = express();
 app.use(cors);
 app.use(helmet());
+// app.use(express.json());
+// app.use(express.urlencoded({ extended: true }));
 app.disable("x-powered-by");
 
 const htmlText = (bodyText) => `<!doctype html>
@@ -65,9 +68,30 @@ app.get("/", async (req, res) => {
   }
 });
 
-app.post("/api/calendar/:key", async (req, res) => {
-  await saveCalendar(req.params.key);
-  res.send("Success");
+const upload = multer({ storage: multer.memoryStorage() }).fields([
+  { name: "texts" },
+  { name: "themes" },
+]);
+app.post("/api/calendar", upload, (req, res) => {
+  upload(req, res, function (err) {
+    if (err) {
+      console.log(err);
+      res.status(400).send("Error");
+      return;
+    }
+    const saveCaller = async (texts, themes) => saveCalendar(texts, themes);
+    console.log(req.files["texts"][0]);
+    saveCaller(req.files["texts"][0].buffer, req.files["themes"][0].buffer)
+      .then(() => {
+        res.send("Sucesso");
+        console.log(" =============> Finalizou");
+      })
+      .catch((err) => {
+        console.log(err);
+
+        res.status(400).send("Error");
+      });
+  });
 });
 
 app.get("/api/bible/:key", async (req, res) => {
@@ -91,43 +115,43 @@ app.get("/api/calendar/:date", async (req, res) => {
 
 exports.app = functions.https.onRequest(app);
 
-exports.dailyReadingSchedule = functions.pubsub
-  .schedule("0 6 * * *")
-  .timeZone("America/Sao_Paulo")
-  .onRun(async (context) => {
-    const transporter = require("nodemailer").createTransport({
-      host: "smtp-relay.sendinblue.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: functions.config().mail.user,
-        pass: functions.config().mail.password,
-      },
-    });
+// exports.dailyReadingSchedule = functions.pubsub
+//   .schedule("0 6 * * *")
+//   .timeZone("America/Sao_Paulo")
+//   .onRun(async (context) => {
+//     const transporter = require("nodemailer").createTransport({
+//       host: "smtp-relay.sendinblue.com",
+//       port: 587,
+//       secure: false,
+//       auth: {
+//         user: functions.config().mail.user,
+//         pass: functions.config().mail.password,
+//       },
+//     });
 
-    const response = await require("axios").get(
-      "https://jjdev-2c935.web.app/?format=json"
-    );
+//     const response = await require("axios").get(
+//       "https://jjdev-2c935.web.app/?format=json"
+//     );
 
-    console.log(`${response.data}`);
-    console.log(`${JSON.stringify(response.data)}`);
+//     console.log(`${response.data}`);
+//     console.log(`${JSON.stringify(response.data)}`);
 
-    return transporter
-      .sendMail({
-        from: '"Josafá Souza Jr." <josafajr@hotmail.com>',
-        to: "josafassj@gmail.com, <kim.s.martins@gmail.com>",
-        subject: "Leitura diária do bloco",
-        html: `<!doctype html>
-        <head>
-          <title>JJDev</title>
-        </head>
-        <body>
-          ${response.data.text}
-          <p>_Almeida Corrigida e Fiel_</p>
-        </body>
-      </html>`,
-      })
-      .then((res) => {
-        return res;
-      });
-  });
+//     return transporter
+//       .sendMail({
+//         from: '"Josafá Souza Jr." <josafajr@hotmail.com>',
+//         to: "josafassj@gmail.com, <kim.s.martins@gmail.com>",
+//         subject: "Leitura diária do bloco",
+//         html: `<!doctype html>
+//         <head>
+//           <title>JJDev</title>
+//         </head>
+//         <body>
+//           ${response.data.text}
+//           <p>_Almeida Corrigida e Fiel_</p>
+//         </body>
+//       </html>`,
+//       })
+//       .then((res) => {
+//         return res;
+//       });
+//   });

@@ -88,10 +88,8 @@ async function getText(version, reference, axiosInstance) {
   return finalText;
 }
 
-async function saveCalendar(key) {
-  const filePathThemes = path.join(__dirname, `calendar/${key}.themes`);
-
-  const themesData = fs.readFileSync(filePathThemes, "utf8");
+async function saveCalendar(texts, themes) {
+  const themesData = themes.toString();
   for (const line of themesData.split(/\r?\n/)) {
     const t = line.split("|");
     const id = t[0];
@@ -104,9 +102,8 @@ async function saveCalendar(key) {
     await admin.firestore().collection("theme").doc(id).set(theme);
   }
 
-  const filePath = path.join(__dirname, `calendar/${id}.texts`);
   try {
-    const data = fs.readFileSync(filePath, "utf8");
+    const data = texts.toString();
 
     for (const line of data.split(/\r?\n/)) {
       const d = line.split("|");
